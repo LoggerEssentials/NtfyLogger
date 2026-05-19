@@ -15,6 +15,10 @@ class NtfyClient {
 		private NtfyConfiguration $config
 	) {}
 
+	public function getConfiguration(): NtfyConfiguration {
+		return $this->config;
+	}
+
 	public function sendMessage(string $message, ?NtfyParams $params = null): void {
 		$params ??= new NtfyParams();
 		$headers = array_merge(

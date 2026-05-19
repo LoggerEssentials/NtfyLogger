@@ -2,10 +2,16 @@
 
 namespace Logger\Ntfy;
 
+use Stringable;
+
+/**
+ * @phpstan-type NtfyAction array<string, bool|float|int|string|null>
+ * @phpstan-type NtfyActions array<int, NtfyAction|string>
+ */
 class NtfyParams {
 	/**
 	 * @param list<string> $tags
-	 * @param array<int, array<string, scalar|null>|string>|string|null $actions
+	 * @param NtfyActions|string|null $actions
 	 */
 	public function __construct(
 		public ?string $title = null,
@@ -28,24 +34,24 @@ class NtfyParams {
 	) {}
 
 	/**
-	 * @param array<string, scalar|list<string>|array<int, array<string, scalar|null>|string>|null> $values
+	 * @param array<array-key, mixed> $values
 	 */
 	public static function fromArray(array $values): self {
 		return new self(
-			title: isset($values['title']) ? (string)$values['title'] : null,
+			title: self::normalizeString($values['title'] ?? null),
 			priority: self::normalizePriority($values['priority'] ?? null),
 			tags: self::normalizeTags($values['tags'] ?? []),
 			markdown: isset($values['markdown']) ? (bool)$values['markdown'] : null,
-			click: isset($values['click']) ? (string)$values['click'] : null,
-			attach: isset($values['attach']) ? (string)$values['attach'] : null,
-			filename: isset($values['filename']) ? (string)$values['filename'] : null,
-			icon: isset($values['icon']) ? (string)$values['icon'] : null,
+			click: self::normalizeString($values['click'] ?? null),
+			attach: self::normalizeString($values['attach'] ?? null),
+			filename: self::normalizeString($values['filename'] ?? null),
+			icon: self::normalizeString($values['icon'] ?? null),
 			actions: self::normalizeActions($values['actions'] ?? null),
-			delay: isset($values['delay']) ? (string)$values['delay'] : null,
-			email: isset($values['email']) ? (string)$values['email'] : null,
-			call: isset($values['call']) ? (string)$values['call'] : null,
-			topic: isset($values['topic']) ? (string)$values['topic'] : null,
-			sequenceId: isset($values['sequence_id']) ? (string)$values['sequence_id'] : null,
+			delay: self::normalizeString($values['delay'] ?? null),
+			email: self::normalizeString($values['email'] ?? null),
+			call: self::normalizeString($values['call'] ?? null),
+			topic: self::normalizeString($values['topic'] ?? null),
+			sequenceId: self::normalizeString($values['sequence_id'] ?? null),
 			cache: isset($values['cache']) ? (bool)$values['cache'] : null,
 			firebase: isset($values['firebase']) ? (bool)$values['firebase'] : null,
 			unifiedPush: isset($values['unified_push']) ? (bool)$values['unified_push'] : null,
@@ -112,12 +118,26 @@ class NtfyParams {
 		return $value ? 'yes' : 'no';
 	}
 
+	private static function normalizeString(mixed $value): ?string {
+		if($value === null) {
+			return null;
+		}
+		if(is_scalar($value) || $value instanceof Stringable) {
+			return (string)$value;
+		}
+
+		return null;
+	}
+
 	private static function normalizePriority(mixed $priority): int|string|null {
 		if($priority === null || is_int($priority) || is_string($priority)) {
 			return $priority;
 		}
+		if(is_float($priority) || is_bool($priority) || $priority instanceof Stringable) {
+			return (string)$priority;
+		}
 
-		return (string)$priority;
+		return null;
 	}
 
 	/**
@@ -131,17 +151,54 @@ class NtfyParams {
 			return [];
 		}
 
-		return array_values(array_map(static fn(mixed $tag): string => (string)$tag, $tags));
+		$normalizedTags = [];
+		foreach($tags as $tag) {
+			if(is_scalar($tag) || $tag instanceof Stringable) {
+				$tag = trim((string)$tag);
+				if($tag !== '') {
+					$normalizedTags[] = $tag;
+				}
+			}
+		}
+
+		return $normalizedTags;
 	}
 
 	/**
-	 * @return array<int, array<string, scalar|null>|string>|string|null
+	 * @return NtfyActions|string|null
 	 */
 	private static function normalizeActions(mixed $actions): array|string|null {
-		if($actions === null || is_string($actions) || is_array($actions)) {
+		if($actions === null || is_string($actions)) {
 			return $actions;
 		}
+		if(is_scalar($actions) || $actions instanceof Stringable) {
+			return (string)$actions;
+		}
+		if(!is_array($actions)) {
+			return null;
+		}
 
-		return (string)$actions;
+		$normalizedActions = [];
+		foreach($actions as $action) {
+			if(is_string($action)) {
+				$normalizedActions[] = $action;
+				continue;
+			}
+			if(!is_array($action)) {
+				continue;
+			}
+
+			$normalizedAction = [];
+			foreach($action as $key => $value) {
+				if(is_string($key) && ($value === null || is_scalar($value))) {
+					$normalizedAction[$key] = $value;
+				}
+			}
+			if($normalizedAction !== []) {
+				$normalizedActions[] = $normalizedAction;
+			}
+		}
+
+		return $normalizedActions;
 	}
 }

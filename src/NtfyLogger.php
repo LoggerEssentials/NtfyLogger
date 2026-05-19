@@ -3,6 +3,7 @@
 namespace Logger\Ntfy;
 
 use Stringable;
+use Throwable;
 
 use Psr\Log\AbstractLogger;
 use Psr\Log\LogLevel;
@@ -17,7 +18,7 @@ class NtfyLogger extends AbstractLogger {
 	 * @param string|Stringable $message
 	 */
 	public function log($level, $message, array $context = []): void {
-		$this->client->sendMessage($this->interpolate((string)$message, $context), $this->createParams($level, $context));
+		$this->client->sendMessage($this->createMessage((string)$message, $context), $this->createParams($level, $context));
 	}
 
 	/**
@@ -25,22 +26,51 @@ class NtfyLogger extends AbstractLogger {
 	 */
 	private function createParams(mixed $level, array $context): NtfyParams {
 		$params = $context['ntfy'] ?? null;
+		$level = is_scalar($level) || $level instanceof Stringable ? (string)$level : '';
 
 		if($params instanceof NtfyParams) {
-			return $params;
+			return $this->withExceptionMarkdown($params, $context);
 		}
 		if(is_array($params)) {
-			return NtfyParams::fromArray($params);
+			return $this->withExceptionMarkdown(NtfyParams::fromArray($params), $context);
 		}
 
-		return NtfyParams::fromArray([
-			'title' => $context['title'] ?? strtoupper((string)$level),
-			'priority' => $context['priority'] ?? $this->getPriority((string)$level),
-			'tags' => $context['tags'] ?? $this->getTags((string)$level),
-			'click' => $context['click'] ?? null,
+		return $this->withExceptionMarkdown(NtfyParams::fromArray([
+			'title' => $context['title'] ?? strtoupper($level),
+			'priority' => $context['priority'] ?? $this->getPriority($level),
+			'tags' => $context['tags'] ?? $this->getTags($level),
+			'click' => $context['click'] ?? $context['ntfy_url'] ?? $context['url'] ?? null,
 			'topic' => $context['topic'] ?? null,
 			'sequence_id' => $context['sequence_id'] ?? null,
-		]);
+		]), $context);
+	}
+
+	/**
+	 * @param array<string, mixed> $context
+	 */
+	private function createMessage(string $message, array $context): string {
+		$message = $this->interpolate($message, $context);
+		$exception = $context['exception'] ?? null;
+
+		if(!$exception instanceof Throwable) {
+			return $message;
+		}
+
+		return $message."\n\n".(new NtfyExceptionMarkdownRenderer($this->client->getConfiguration()->getExceptionConfiguration()))->render($exception);
+	}
+
+	/**
+	 * @param array<string, mixed> $context
+	 */
+	private function withExceptionMarkdown(NtfyParams $params, array $context): NtfyParams {
+		if(!($context['exception'] ?? null) instanceof Throwable) {
+			return $params;
+		}
+
+		$params = clone $params;
+		$params->markdown = true;
+
+		return $params;
 	}
 
 	private function getPriority(string $level): int {

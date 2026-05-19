@@ -18,6 +18,7 @@ class NtfyConfiguration {
 		private ?string $username = null,
 		#[SensitiveParameter]
 		private ?string $password = null,
+		private ?NtfyExceptionConfiguration $exceptionConfiguration = null,
 	) {
 		$this->topic = $this->normalizeTopic($topic);
 		$this->serverUrl = $this->normalizeServerUrl($serverUrl);
@@ -36,6 +37,10 @@ class NtfyConfiguration {
 
 	public function getTopic(): string {
 		return $this->topic;
+	}
+
+	public function getExceptionConfiguration(): NtfyExceptionConfiguration {
+		return $this->exceptionConfiguration ??= new NtfyExceptionConfiguration();
 	}
 
 	public function getPublishUrl(?string $topic = null, ?string $sequenceId = null): string {

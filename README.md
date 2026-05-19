@@ -29,6 +29,7 @@ composer require symfony/http-client nyholm/psr7
 
 use Logger\Ntfy\NtfyClient;
 use Logger\Ntfy\NtfyConfiguration;
+use Logger\Ntfy\NtfyExceptionConfiguration;
 use Logger\Ntfy\NtfyLogger;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Symfony\Component\HttpClient\Psr18Client;
@@ -67,6 +68,10 @@ new NtfyConfiguration(
 	topic: 'my-alerts',
 	token: 'tk_your_access_token',
 	serverUrl: 'https://ntfy.sh',
+	exceptionConfiguration: new NtfyExceptionConfiguration(
+		basePath: __DIR__,
+		applicationPaths: ['src', 'modules'],
+	),
 );
 ```
 
@@ -108,10 +113,40 @@ $logger->warning('Queue depth is high', [
 	'priority' => 3,
 	'tags' => ['triangular_flag_on_post'],
 	'click' => 'https://example.com/queues',
+	'url' => 'https://example.com/queues',
+	'ntfy_url' => 'https://example.com/queues',
 	'topic' => 'ops-alerts',
 	'sequence_id' => 'queue-depth',
 ]);
 ```
+
+`url` and `ntfy_url` are aliases for the notification click URL. When both are present, `ntfy_url` wins.
+
+## Exception Context
+
+When the context contains an `exception` value and that value is a `Throwable`, the logger appends a compact Markdown exception report to the notification body and enables ntfy Markdown rendering.
+
+```php
+$logger->error('Import failed', [
+	'exception' => $exception,
+]);
+```
+
+The report renders the exception class, message, throw location, and stack trace in short line-based blocks so it remains readable on narrow phone screens. Files that belong to the application are highlighted in bold.
+
+Configure exception path handling through `NtfyExceptionConfiguration`:
+
+```php
+$config = new NtfyConfiguration(
+	topic: 'ops-alerts',
+	exceptionConfiguration: new NtfyExceptionConfiguration(
+		basePath: '/var/www/app',
+		applicationPaths: ['src', 'modules'],
+	),
+);
+```
+
+`basePath` is used to shorten absolute file names in the trace. `applicationPaths` defines which files should be highlighted. Relative application paths are resolved below `basePath`.
 
 For full control, pass an `NtfyParams` instance or an array under the `ntfy` context key:
 

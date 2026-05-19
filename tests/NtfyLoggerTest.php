@@ -4,12 +4,15 @@ namespace Logger\Ntfy\Tests;
 
 use Logger\Ntfy\NtfyClient;
 use Logger\Ntfy\NtfyConfiguration;
+use Logger\Ntfy\NtfyExceptionConfiguration;
 use Logger\Ntfy\NtfyLogger;
 use Logger\Ntfy\NtfyParams;
 use Logger\Ntfy\Tests\Support\CapturingHttpClient;
 use Logger\Ntfy\Tests\Support\SimpleRequestFactory;
 use Logger\Ntfy\Tests\Support\SimpleStreamFactory;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
+use Throwable;
 
 class NtfyLoggerTest extends TestCase {
 	public function testInterpolatesMessageAndMapsPsrLevelToDefaultNtfyParameters(): void {
@@ -64,13 +67,109 @@ class NtfyLoggerTest extends TestCase {
 		self::assertSame('memo', $request->getHeaderLine('Tags'));
 	}
 
-	private function createLogger(CapturingHttpClient $httpClient): NtfyLogger {
+	public function testUsesContextUrlAsNotificationClickUrl(): void {
+		$httpClient = new CapturingHttpClient();
+		$logger = $this->createLogger($httpClient);
+
+		$logger->info('Info message', [
+			'url' => 'https://status.example.com/orders/123',
+		]);
+
+		$request = self::assertSentRequest($httpClient);
+		self::assertSame('https://status.example.com/orders/123', $request->getHeaderLine('Click'));
+	}
+
+	public function testPrefersContextNtfyUrlOverUrl(): void {
+		$httpClient = new CapturingHttpClient();
+		$logger = $this->createLogger($httpClient);
+
+		$logger->info('Info message', [
+			'url' => 'https://example.com/generic',
+			'ntfy_url' => 'https://status.example.com/specific',
+		]);
+
+		$request = self::assertSentRequest($httpClient);
+		self::assertSame('https://status.example.com/specific', $request->getHeaderLine('Click'));
+	}
+
+	public function testAppendsThrowableContextAsReadableMarkdown(): void {
+		$httpClient = new CapturingHttpClient();
+		$logger = $this->createLogger($httpClient, new NtfyConfiguration(
+			topic: 'alerts',
+			serverUrl: 'https://ntfy.example.com',
+			exceptionConfiguration: new NtfyExceptionConfiguration(
+				basePath: dirname(__DIR__),
+				applicationPaths: ['tests'],
+			),
+		));
+		$exception = $this->createTestException();
+
+		$logger->error('Import failed', [
+			'exception' => $exception,
+		]);
+
+		$request = self::assertSentRequest($httpClient);
+		$body = (string)$request->getBody();
+		self::assertStringStartsWith('Import failed', $body);
+		self::assertStringContainsString('### Exception: `RuntimeException`', $body);
+		self::assertStringContainsString('`Broken import`', $body);
+		self::assertMatchesRegularExpression('~\*\*`tests/NtfyLoggerTest.php:\d+`\*\*~', $body);
+		self::assertStringContainsString('**Trace**', $body);
+		self::assertSame('yes', $request->getHeaderLine('Markdown'));
+	}
+
+	public function testRendersInnerMostExceptionFirst(): void {
+		$httpClient = new CapturingHttpClient();
+		$logger = $this->createLogger($httpClient);
+		$exception = new RuntimeException('Outer failure', previous: new RuntimeException('Inner failure'));
+
+		$logger->error('Import failed', [
+			'exception' => $exception,
+		]);
+
+		$body = (string)self::assertSentRequest($httpClient)->getBody();
+		self::assertStringContainsString('### Exception: `RuntimeException`', $body);
+		self::assertStringContainsString('### Following exception: `RuntimeException`', $body);
+		self::assertLessThan(
+			strpos($body, '`Outer failure`'),
+			strpos($body, '`Inner failure`'),
+		);
+	}
+
+	public function testIgnoresNonThrowableExceptionContext(): void {
+		$httpClient = new CapturingHttpClient();
+		$logger = $this->createLogger($httpClient);
+
+		$logger->error('Import failed', [
+			'exception' => 'not throwable',
+		]);
+
+		$request = self::assertSentRequest($httpClient);
+		self::assertSame('Import failed', (string)$request->getBody());
+		self::assertSame('', $request->getHeaderLine('Markdown'));
+	}
+
+	private function createLogger(CapturingHttpClient $httpClient, ?NtfyConfiguration $configuration = null): NtfyLogger {
 		return new NtfyLogger(new NtfyClient(
 			client: $httpClient,
 			requestFactory: new SimpleRequestFactory(),
 			streamFactory: new SimpleStreamFactory(),
-			config: new NtfyConfiguration(topic: 'alerts', serverUrl: 'https://ntfy.example.com'),
+			config: $configuration ?? new NtfyConfiguration(topic: 'alerts', serverUrl: 'https://ntfy.example.com'),
 		));
+	}
+
+	private function createTestException(): Throwable {
+		try {
+			$this->throwTestException();
+		} catch(Throwable $exception) {
+			return $exception;
+		}
+
+		throw new RuntimeException('Expected test exception was not thrown.');
+	}
+
+	private function throwTestException(): void {
+		throw new RuntimeException('Broken import');
 	}
 
 	private static function assertSentRequest(CapturingHttpClient $httpClient): \Psr\Http\Message\RequestInterface {

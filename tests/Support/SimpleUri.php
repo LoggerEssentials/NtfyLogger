@@ -30,7 +30,8 @@ class SimpleUri implements UriInterface {
 	}
 
 	public function getPort(): ?int {
-		return parse_url($this->uri, PHP_URL_PORT);
+		$port = parse_url($this->uri, PHP_URL_PORT);
+		return is_int($port) ? $port : null;
 	}
 
 	public function getPath(): string {

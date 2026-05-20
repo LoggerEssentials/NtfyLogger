@@ -2,6 +2,8 @@
 
 namespace Logger\Ntfy;
 
+use Logger\Ntfy\Service\ContextUrlResolver;
+use Logger\Ntfy\Service\RuntimeContext;
 use Stringable;
 use Throwable;
 
@@ -27,6 +29,7 @@ class NtfyLogger extends AbstractLogger {
 	private function createParams(mixed $level, array $context): NtfyParams {
 		$params = $context['ntfy'] ?? null;
 		$level = is_scalar($level) || $level instanceof Stringable ? (string)$level : '';
+		$click = $context['click'] ?? ContextUrlResolver::resolve($context, $this->getServer()) ?? $context['ntfy_url'] ?? $context['url'] ?? null;
 
 		if($params instanceof NtfyParams) {
 			return $this->withExceptionMarkdown($params, $context);
@@ -39,7 +42,7 @@ class NtfyLogger extends AbstractLogger {
 			'title' => $context['title'] ?? strtoupper($level),
 			'priority' => $context['priority'] ?? $this->getPriority($level),
 			'tags' => $context['tags'] ?? $this->getTags($level),
-			'click' => $context['click'] ?? $context['ntfy_url'] ?? $context['url'] ?? null,
+			'click' => $click,
 			'topic' => $context['topic'] ?? null,
 			'sequence_id' => $context['sequence_id'] ?? null,
 		]), $context);
@@ -56,7 +59,14 @@ class NtfyLogger extends AbstractLogger {
 			return $message;
 		}
 
-		return $message."\n\n".(new NtfyExceptionMarkdownRenderer($this->client->getConfiguration()->getExceptionConfiguration()))->render($exception);
+		$blocks = [$message];
+		$runtimeContext = RuntimeContext::describe($context, $this->getServer());
+		if($runtimeContext !== null) {
+			$blocks[] = "**Context**\n{$runtimeContext}";
+		}
+		$blocks[] = (new NtfyExceptionMarkdownRenderer($this->client->getConfiguration()->getExceptionConfiguration()))->render($exception);
+
+		return implode("\n\n", $blocks);
 	}
 
 	/**
@@ -94,6 +104,20 @@ class NtfyLogger extends AbstractLogger {
 			LogLevel::NOTICE, LogLevel::INFO => ['information_source'],
 			default => [],
 		};
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function getServer(): array {
+		$server = [];
+		foreach($_SERVER as $key => $value) {
+			if(is_string($key)) {
+				$server[$key] = $value;
+			}
+		}
+
+		return $server;
 	}
 
 	/**

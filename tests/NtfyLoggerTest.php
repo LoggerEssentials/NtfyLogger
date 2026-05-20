@@ -111,6 +111,11 @@ class NtfyLoggerTest extends TestCase {
 		$request = self::assertSentRequest($httpClient);
 		$body = (string)$request->getBody();
 		self::assertStringStartsWith('Import failed', $body);
+		self::assertStringContainsString("**Context**\nCLI: `", $body);
+		self::assertLessThan(
+			strpos($body, '### Exception: `RuntimeException`'),
+			strpos($body, '**Context**'),
+		);
 		self::assertStringContainsString('### Exception: `RuntimeException`', $body);
 		self::assertStringContainsString('`Broken import`', $body);
 		self::assertMatchesRegularExpression('~\*\*`tests/NtfyLoggerTest.php:\d+`\*\*~', $body);

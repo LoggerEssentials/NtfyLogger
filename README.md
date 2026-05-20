@@ -129,10 +129,13 @@ When the context contains an `exception` value and that value is a `Throwable`, 
 ```php
 $logger->error('Import failed', [
 	'exception' => $exception,
+	'ntfy_url' => '/admin/imports/42?tab=log',
 ]);
 ```
 
 The report renders the exception class, message, throw location, and stack trace in short line-based blocks so it remains readable on narrow phone screens. Files that belong to the application are highlighted in bold.
+
+Directly below the original log message, the report also shows the runtime context. In a web request this is the current URL, preferably from `ntfy_url`; relative `ntfy_url` values are resolved against the request scheme and host. In CLI runs, the logger shows the command invocation when it is available through `$_SERVER['argv']`.
 
 Configure exception path handling through `NtfyExceptionConfiguration`:
 

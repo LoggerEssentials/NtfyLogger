@@ -18,8 +18,8 @@ class NtfyExceptionMarkdownRenderer {
 		} while($exception !== null);
 
 		$blocks = [];
-		foreach(array_reverse($exceptions) as $index => $exception) {
-			$blocks[] = $this->renderException($exception, $index !== 0);
+		foreach(array_reverse($exceptions) as $index => $ex) {
+			$blocks[] = $this->renderException($ex, $index !== 0);
 		}
 
 		return implode("\n\n", $blocks);
@@ -95,6 +95,6 @@ class NtfyExceptionMarkdownRenderer {
 	}
 
 	private function code(string $value): string {
-		return '`'.str_replace('`', "'", $value).'`';
+		return sprintf('`%s`', strtr($value, ['`' => "'"]));
 	}
 }

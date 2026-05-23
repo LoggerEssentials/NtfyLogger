@@ -52,6 +52,26 @@ class NtfyClientTest extends TestCase {
 		$client->sendMessage('Failure');
 	}
 
+	public function testSendsLocalAttachmentWithVisibleMessageHeader(): void {
+		$httpClient = new CapturingHttpClient();
+		$client = $this->createClient($httpClient, new NtfyConfiguration(
+			topic: 'alerts',
+			serverUrl: 'https://ntfy.example.com',
+		));
+
+		$client->sendMessageWithAttachment('Import failed', 'Full stacktrace', 'stacktrace.txt', new NtfyParams(
+			title: 'ERROR',
+			markdown: true,
+		));
+
+		$request = self::assertSentRequest($httpClient);
+		self::assertSame('Full stacktrace', (string)$request->getBody());
+		self::assertSame('m=Import%20failed', parse_url((string)$request->getUri(), PHP_URL_QUERY) ?: '');
+		self::assertSame('', $request->getHeaderLine('Message'));
+		self::assertSame('stacktrace.txt', $request->getHeaderLine('Filename'));
+		self::assertSame('yes', $request->getHeaderLine('Markdown'));
+	}
+
 	private function createClient(CapturingHttpClient $httpClient, NtfyConfiguration $configuration): NtfyClient {
 		return new NtfyClient(
 			client: $httpClient,

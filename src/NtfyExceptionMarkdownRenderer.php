@@ -25,7 +25,31 @@ class NtfyExceptionMarkdownRenderer {
 		return implode("\n\n", $blocks);
 	}
 
-	private function renderException(Throwable $exception, bool $following): string {
+	public function renderInnerMost(Throwable $exception, int $maxFrames = 10): string {
+		while($exception->getPrevious() !== null) {
+			$exception = $exception->getPrevious();
+		}
+
+		return $this->renderException($exception, false, $maxFrames);
+	}
+
+	public function renderInnerMostSummary(Throwable $exception): string {
+		while($exception->getPrevious() !== null) {
+			$exception = $exception->getPrevious();
+		}
+
+		return $this->renderException($exception, false, null, false);
+	}
+
+	public function renderInnerMostTrace(Throwable $exception, int $maxFrames = 10): string {
+		while($exception->getPrevious() !== null) {
+			$exception = $exception->getPrevious();
+		}
+
+		return implode("\n", $this->renderFrames($exception->getTrace(), $maxFrames));
+	}
+
+	private function renderException(Throwable $exception, bool $following, ?int $maxFrames = null, bool $includeTrace = true): string {
 		$lines = [
 			($following ? '### Following exception: ' : '### Exception: ').$this->code($exception::class),
 		];
@@ -38,7 +62,7 @@ class NtfyExceptionMarkdownRenderer {
 		$lines[] = '**Thrown at**';
 		$lines[] = $this->formatLocation($exception->getFile(), $exception->getLine());
 
-		$frames = $this->renderFrames($exception->getTrace());
+		$frames = $includeTrace ? $this->renderFrames($exception->getTrace(), $maxFrames) : [];
 		if($frames !== []) {
 			$lines[] = '';
 			$lines[] = '**Trace**';
@@ -52,8 +76,13 @@ class NtfyExceptionMarkdownRenderer {
 	 * @param list<array<string, mixed>> $trace
 	 * @return list<string>
 	 */
-	private function renderFrames(array $trace): array {
+	private function renderFrames(array $trace, ?int $maxFrames = null): array {
 		$lines = [];
+		$omittedFrames = 0;
+		if($maxFrames !== null && count($trace) > $maxFrames) {
+			$omittedFrames = count($trace) - $maxFrames;
+			$trace = array_slice($trace, -$maxFrames);
+		}
 
 		foreach($trace as $index => $frame) {
 			$number = $index + 1;
@@ -67,6 +96,9 @@ class NtfyExceptionMarkdownRenderer {
 			if($call !== null) {
 				$lines[] = '   '.$call;
 			}
+		}
+		if($omittedFrames > 0) {
+			$lines[] = sprintf('... %d more frame%s omitted ...', $omittedFrames, $omittedFrames === 1 ? '' : 's');
 		}
 
 		return $lines;

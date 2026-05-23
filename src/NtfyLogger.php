@@ -20,7 +20,17 @@ class NtfyLogger extends AbstractLogger {
 	 * @param string|Stringable $message
 	 */
 	public function log($level, $message, array $context = []): void {
-		$this->client->sendMessage($this->createMessage((string)$message, $context), $this->createParams($level, $context));
+		$messageBody = $this->createMessage((string)$message, $context);
+		$params = $this->createParams($level, $context);
+		$exception = $context['exception'] ?? null;
+
+		if($exception instanceof Throwable && $messageBody->isTruncated()) {
+			$renderer = new NtfyExceptionMarkdownRenderer($this->client->getConfiguration()->getExceptionConfiguration());
+			$this->client->sendMessageWithAttachment((string)$messageBody, $renderer->render($exception), 'stacktrace.txt', $params);
+			return;
+		}
+
+		$this->client->sendMessage((string)$messageBody, $params);
 	}
 
 	/**
@@ -51,22 +61,23 @@ class NtfyLogger extends AbstractLogger {
 	/**
 	 * @param array<string, mixed> $context
 	 */
-	private function createMessage(string $message, array $context): string {
+	private function createMessage(string $message, array $context): NtfyMessageBody {
 		$message = $this->interpolate($message, $context);
 		$exception = $context['exception'] ?? null;
 
 		if(!$exception instanceof Throwable) {
-			return $message;
+			return new NtfyMessageBody(message: $message);
 		}
 
-		$blocks = [$message];
 		$runtimeContext = RuntimeContext::describe($context, $this->getServer());
-		if($runtimeContext !== null) {
-			$blocks[] = "**Context**\n{$runtimeContext}";
-		}
-		$blocks[] = (new NtfyExceptionMarkdownRenderer($this->client->getConfiguration()->getExceptionConfiguration()))->render($exception);
+		$renderer = new NtfyExceptionMarkdownRenderer($this->client->getConfiguration()->getExceptionConfiguration());
 
-		return implode("\n\n", $blocks);
+		return new NtfyMessageBody(
+			message: $message,
+			exception: $renderer->renderInnerMostSummary($exception),
+			runtimeContext: $runtimeContext,
+			stacktrace: $renderer->renderInnerMostTrace($exception, 10),
+		);
 	}
 
 	/**

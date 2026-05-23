@@ -112,7 +112,7 @@ class NtfyLoggerTest extends TestCase {
 		$body = (string)$request->getBody();
 		self::assertStringStartsWith('Import failed', $body);
 		self::assertStringContainsString("**Context**\nCLI: `", $body);
-		self::assertLessThan(
+		self::assertGreaterThan(
 			strpos($body, '### Exception: `RuntimeException`'),
 			strpos($body, '**Context**'),
 		);
@@ -134,11 +134,32 @@ class NtfyLoggerTest extends TestCase {
 
 		$body = (string)self::assertSentRequest($httpClient)->getBody();
 		self::assertStringContainsString('### Exception: `RuntimeException`', $body);
-		self::assertStringContainsString('### Following exception: `RuntimeException`', $body);
-		self::assertLessThan(
-			strpos($body, '`Outer failure`'),
-			strpos($body, '`Inner failure`'),
-		);
+		self::assertStringContainsString('`Inner failure`', $body);
+		self::assertStringNotContainsString('`Outer failure`', $body);
+		self::assertStringNotContainsString('### Following exception:', $body);
+	}
+
+	public function testSendsShortenedMessageAndFullStacktraceAttachmentWhenExceptionMessageExceedsNtfyLimit(): void {
+		$httpClient = new CapturingHttpClient();
+		$logger = $this->createLogger($httpClient);
+		$exception = new RuntimeException(str_repeat('inner failure ', 500), previous: new RuntimeException(str_repeat('root cause ', 500)));
+
+		$logger->error(str_repeat('Import failed ', 500), [
+			'exception' => $exception,
+		]);
+
+		$request = self::assertSentRequest($httpClient);
+		parse_str(parse_url((string)$request->getUri(), PHP_URL_QUERY) ?: '', $query);
+		$visibleMessage = is_string($query['m'] ?? null) ? $query['m'] : '';
+		self::assertNotSame('', $visibleMessage);
+		self::assertLessThanOrEqual(4096, strlen($visibleMessage));
+		self::assertSame('', $request->getHeaderLine('Message'));
+		self::assertSame('stacktrace.txt', $request->getHeaderLine('Filename'));
+		self::assertStringContainsString('root cause', $visibleMessage);
+		self::assertStringContainsString('... truncated ...', $visibleMessage);
+		self::assertStringContainsString('inner failure', (string)$request->getBody());
+		self::assertStringContainsString('root cause', (string)$request->getBody());
+		self::assertSame('yes', $request->getHeaderLine('Markdown'));
 	}
 
 	public function testIgnoresNonThrowableExceptionContext(): void {
